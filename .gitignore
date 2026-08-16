@@ -1,0 +1,15 @@
+# generated reports
+*.html
+!docs/*.html
+# python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.venv/
+venv/
+cot/
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
