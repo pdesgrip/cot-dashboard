@@ -4,7 +4,7 @@ A single-file Python script that pulls CFTC Commitments of Traders data and
 renders a positioning-percentile dashboard, flagging where the "smart
 speculator" cohort in each market is at a historical extreme.
 
-Sample output: [docs/sample_extremes.html](docs/sample_extremes.html) (mock data). Add a screenshot of a live run as `docs/sample.png` if you like.
+![sample](docs/sample.png)
 
 ## What it shows
 
