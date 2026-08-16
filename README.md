@@ -4,7 +4,7 @@ A single-file Python script that pulls CFTC Commitments of Traders data and
 renders a positioning-percentile dashboard, flagging where the "smart
 speculator" cohort in each market is at a historical extreme.
 
-![sample](docs/sample.png)
+Sample output: [docs/sample_extremes.html](docs/sample_extremes.html) (mock data). Add a screenshot of a live run as `docs/sample.png` if you like.
 
 ## What it shows
 
@@ -49,6 +49,7 @@ python cot_dashboard.py --threshold 5      # tighter definition (5th/95th)
 python cot_dashboard.py --combined         # futures + options combined reports
 python cot_dashboard.py --search wheat     # find CFTC contract codes by name
 python cot_dashboard.py --mock             # synthetic data, no network
+python cot_dashboard.py --nav              # add full/extremes links (published site)
 ```
 
 Open the resulting HTML file in a browser.
@@ -77,11 +78,24 @@ Anonymous API access is rate-limited on a shared pool; a weekly run will never
 hit it. If you hammer it while backfilling, register a free Socrata app token
 and add it as an `X-App-Token` header in `fetch()`.
 
-## Automating
+## Live version
 
-Run it after each Friday release. On Windows, Task Scheduler pointing at
-`python C:\path\to\cot_dashboard.py --extremes-only` on Saturday mornings.
-On Mac/Linux, a cron line such as:
+The dashboard rebuilds itself every Saturday morning via GitHub Actions and is
+published with GitHub Pages:
+
+- **Full board:** https://pdesgrip.github.io/cot-dashboard/
+- **Extremes only:** https://pdesgrip.github.io/cot-dashboard/extremes.html
+
+The workflow lives in `.github/workflows/dashboard.yml`. It also rebuilds on
+every push to `main`, and can be triggered by hand from the Actions tab
+("Run workflow"). To use it in a fork: Settings → Pages → Source: *GitHub
+Actions*, then push once.
+
+## Running locally on a schedule
+
+If you'd rather run it on your own machine: on Windows, Task Scheduler pointing
+at `python C:\path\to\cot_dashboard.py --extremes-only` on Saturday mornings;
+on Mac/Linux a cron line such as:
 
 ```
 0 8 * * 6  cd /path/to/repo && python cot_dashboard.py --extremes-only

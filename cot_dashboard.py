@@ -227,6 +227,7 @@ body{margin:0;padding:40px 48px;background:var(--bg);color:var(--ink);
  font:14px/1.45 -apple-system,'Segoe UI',Inter,Roboto,sans-serif}
 h1{font-size:22px;font-weight:800;letter-spacing:-.01em;margin:0}
 .sub{color:var(--mut);font-size:12.5px;margin:6px 0 26px}
+.sub a{color:var(--ink);text-decoration:underline dotted}
 table{border-collapse:collapse;width:100%;max-width:1240px;
  font-variant-numeric:tabular-nums}
 th{font-size:11px;font-weight:600;color:var(--mut);text-align:center;
@@ -322,7 +323,7 @@ def status_cell(r: dict) -> str:
     return f'<td class="st"><span class="tag">{r["streak"]} wk</span></td>'
 
 
-def render(rows: list[dict], thr: int, extremes_only: bool, out: str):
+def render(rows: list[dict], thr: int, extremes_only: bool, out: str, nav: bool = False):
     latest = max(r["date"] for _, _, _, r in rows)
     prev = max((r["prev_date"] for _, _, _, r in rows if r["prev_date"] is not None),
                default=None)
@@ -361,6 +362,12 @@ def render(rows: list[dict], thr: int, extremes_only: bool, out: str):
     if prev is not None:
         sub += f" &nbsp;·&nbsp; Δ vs {prev:%d %b %Y}"
     sub += " &nbsp;·&nbsp; one cohort per asset"
+    if nav:
+        a, b = ("index.html", "extremes.html")
+        sub += (' &nbsp;·&nbsp; '
+                + (f'<a href="{a}">full board</a>' if extremes_only else '<b>full board</b>')
+                + ' / '
+                + ('<b>extremes only</b>' if extremes_only else f'<a href="{b}">extremes only</a>'))
 
     doc = f"""<!doctype html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -406,6 +413,8 @@ def main():
                     help="look up contract names/codes containing TERM, then exit")
     ap.add_argument("--mock", action="store_true",
                     help="synthetic data, no network (design/testing)")
+    ap.add_argument("--nav", action="store_true",
+                    help="add full-board / extremes-only links (for the published site)")
     args = ap.parse_args()
 
     if args.search:
@@ -437,7 +446,7 @@ def main():
         sys.exit("no data fetched")
     order = {g: i for i, g in enumerate(dict.fromkeys(m[1] for m in MARKETS))}
     rows.sort(key=lambda r: order.get(r[1], 99))
-    render(rows, args.threshold, args.extremes_only, args.out)
+    render(rows, args.threshold, args.extremes_only, args.out, args.nav)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,52 @@
+name: Build & publish COT dashboard
+
+on:
+  schedule:
+    # Saturday 06:00 UTC — the Friday 3:30pm ET CFTC release is in by then
+    - cron: "0 6 * * 6"
+  workflow_dispatch:        # "Run workflow" button in the Actions tab
+  push:
+    branches: [main]        # rebuild whenever the script changes
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - run: pip install -r requirements.txt
+
+      - name: Build dashboards
+        run: |
+          mkdir -p site
+          python cot_dashboard.py --nav --out site/index.html
+          python cot_dashboard.py --nav --extremes-only --out site/extremes.html
+          touch site/.nojekyll
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
