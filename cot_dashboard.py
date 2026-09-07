@@ -51,6 +51,8 @@ COHORT_LABEL = {"mm": "MM", "lev": "LS", "am": "AM"}
 
 # (display name, group, dataset, cftc contract code, cohort)
 # Codes can be verified/found with:  python cot_dashboard.py --search <name>
+# NB: mini and micro contracts (ES vs MES, BTC vs MBT) are separate CFTC
+# entries with separate OI — keep them as separate rows, never mix.
 MARKETS = [
     # --- rates ---
     ("TU (2y)",      "RATES",  "tff", "042601", "lev"),
@@ -198,6 +200,9 @@ def compute_row(hist: pd.DataFrame, thr: int) -> dict:
         "prev_date": hist["date"].iloc[-2] if len(hist) > 1 else None,
         "net": hist["net"].iloc[-1],
         "wow": hist["net"].iloc[-1] - hist["net"].iloc[-2] if len(hist) > 1 else 0,
+        "oi": hist["oi"].iloc[-1],
+        "oi_chg": (hist["oi"].iloc[-1] / hist["oi"].iloc[-2] - 1) * 100
+                  if len(hist) > 1 and hist["oi"].iloc[-2] else float("nan"),
         "spark": hist["net_oi"].tail(HIST_WEEKS).tolist(),
         "spark_pct": pcts["p_all"],
     }
@@ -238,6 +243,8 @@ td{padding:5px 10px;text-align:center;border-bottom:1px solid var(--line);
  font-size:13px}
 td.name{font-weight:700}
 td.cohort,td.wow{color:var(--mut);font-size:11.5px}
+td.net{font-size:12px;font-weight:600;color:#3a3d44}
+.oid{font-size:9px;font-weight:600;opacity:.8}
 tr.group td{color:var(--grp);font-size:10.5px;font-weight:700;
  letter-spacing:.08em;text-transform:uppercase;padding-top:16px;
  border-bottom:none}
@@ -260,6 +267,21 @@ td.st{padding:2px 6px}
 .tag.new{color:#fff;background:var(--ink);border-color:var(--ink)}
 @media print{body{padding:12px}}
 """
+
+def fmt_n(v, signed=False):
+    """Compact contract counts: 412k / 2.14M."""
+    if pd.isna(v):
+        return "\u2013"
+    sign = "+" if signed and v > 0 else ("\u2212" if signed and v < 0 else "")
+    x = abs(v)
+    if x >= 1e6:
+        return f"{sign}{x/1e6:.2f}M"
+    if x >= 1e4:
+        return f"{sign}{x/1e3:.0f}k"
+    if x >= 1e3:
+        return f"{sign}{x/1e3:.1f}k"
+    return f"{sign}{x:.0f}"
+
 
 def cell(v, thr, prev=float("nan")):
     """Percentile cell; extremes get a pill, and a small arrow shows the
@@ -337,14 +359,17 @@ def render(rows: list[dict], thr: int, extremes_only: bool, out: str, nav: bool 
         if extremes_only and not is_extreme(r):
             continue
         if group != last_group:
-            body.append(f'<tr class="group"><td colspan="11" class="l">{group}</td></tr>')
+            body.append(f'<tr class="group"><td colspan="13" class="l">{group}</td></tr>')
             last_group = group
-        wow = f"{r['wow']:+,.0f}"
+        oi_chg = ("" if pd.isna(r["oi_chg"]) or abs(r["oi_chg"]) < 0.05 else
+                  f' <span class="oid">{"\u25b2" if r["oi_chg"] > 0 else "\u25bc"}{abs(r["oi_chg"]):.1f}%</span>')
         body.append(
             '<tr>'
             f'<td class="name l">{html.escape(name)}</td>'
             f'<td class="cohort">{COHORT_LABEL[cohort]}</td>'
-            f'<td class="wow">{wow}</td>'
+            f'<td class="net">{fmt_n(r["net"], signed=True)}</td>'
+            f'<td class="wow">{r["wow"]:+,.0f}</td>'
+            f'<td class="wow">{fmt_n(r["oi"])}{oi_chg}</td>'
             + status_cell(r)
             + sparkline(r["spark"], r["spark_pct"], thr)
             + cell(r["p_all"], thr, r["p_all_prev"]) + cell(r["p_5y"], thr, r["p_5y_prev"])
@@ -354,7 +379,7 @@ def render(rows: list[dict], thr: int, extremes_only: bool, out: str, nav: bool 
         shown += 1
 
     if extremes_only and shown == 0:
-        body.append('<tr><td colspan="11" class="l" style="color:var(--mut)">'
+        body.append('<tr><td colspan="13" class="l" style="color:var(--mut)">'
                     'No assets at an extreme this week.</td></tr>')
 
     title = "COT Positioning Extremes" if extremes_only else "COT Positioning Percentiles"
@@ -376,9 +401,10 @@ def render(rows: list[dict], thr: int, extremes_only: bool, out: str, nav: bool 
 <table>
 <tr><th class="l" style="border-bottom:none"></th><th class="grp-head"></th>
 <th class="grp-head"></th><th class="grp-head"></th><th class="grp-head"></th>
+<th class="grp-head"></th><th class="grp-head"></th>
 <th colspan="3" class="grp-head">net / OI &nbsp;%ile</th>
 <th colspan="2" class="grp-head">nominal &nbsp;%ile</th></tr>
-<tr><th class="l">Asset</th><th>Cohort</th><th>Δ wk</th><th>Status</th>
+<tr><th class="l">Asset</th><th>Cohort</th><th>Net</th><th>Δ wk</th><th>OI</th><th>Status</th>
 <th>1y net/OI</th><th>All-time</th><th>5y</th><th>1y</th><th>5y</th><th>1y</th></tr>
 {''.join(body)}
 </table>
@@ -388,7 +414,9 @@ def render(rows: list[dict], thr: int, extremes_only: bool, out: str, nav: bool 
 </div>
 <div class="foot">Percentile of the mapped cohort's net positioning within each
 window · net/OI normalises for OI growth · nominal ranks raw net contracts
-(5y/1y only) · Δ wk = week-on-week change in net contracts · Status = consecutive
+(5y/1y only) · Net = current net contracts, Δ wk = week-on-week change · OI = total open
+interest with week-on-week Δ% · read net × OI together: net▲ OI▲ fresh buying,
+net▲ OI▼ short covering, net▼ OI▲ new shorts, net▼ OI▼ long liquidation · Status = consecutive
 weeks at an extreme (NEW = entered this week) · sparkline = net/OI over the last
 year, dots mark weeks at an all-time extreme · ▲▼ = percentile change vs last
 week (shown when ≥5) · cohorts:
