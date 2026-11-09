@@ -147,7 +147,9 @@ def mock_history(seed: int) -> pd.DataFrame:
     n = len(dates)
     net = pd.Series(rng.normal(0, 8000, n)).cumsum() + rng.normal(0, 40000)
     oi = pd.Series(abs(rng.normal(0, 5000, n)).cumsum() + 200000)
-    return pd.DataFrame({"date": dates, "net": net, "oi": oi})
+    lng = (oi * 0.3 + net / 2).clip(lower=0)
+    return pd.DataFrame({"date": dates, "net": net, "oi": oi,
+                         "lng": lng, "sht": lng - net})
 
 # ----------------------------------------------------------- computation ---
 
@@ -158,9 +160,11 @@ def cohort_net(df: pd.DataFrame, cohort: str) -> pd.DataFrame:
     oi_c = col(df, "open_interest")
     out = pd.DataFrame({
         "date": df["date"],
-        "net": pd.to_numeric(df[long_c]) - pd.to_numeric(df[short_c]),
+        "lng": pd.to_numeric(df[long_c]),
+        "sht": pd.to_numeric(df[short_c]),
         "oi": pd.to_numeric(df[oi_c]),
     })
+    out["net"] = out["lng"] - out["sht"]
     return out.sort_values("date").reset_index(drop=True)
 
 
@@ -203,6 +207,10 @@ def compute_row(hist: pd.DataFrame, thr: int) -> dict:
         "oi": hist["oi"].iloc[-1],
         "oi_chg": (hist["oi"].iloc[-1] / hist["oi"].iloc[-2] - 1) * 100
                   if len(hist) > 1 and hist["oi"].iloc[-2] else float("nan"),
+        "dL": hist["lng"].iloc[-1] - hist["lng"].iloc[-2]
+              if "lng" in hist and len(hist) > 1 else float("nan"),
+        "dS": hist["sht"].iloc[-1] - hist["sht"].iloc[-2]
+              if "sht" in hist and len(hist) > 1 else float("nan"),
         "spark": hist["net_oi"].tail(HIST_WEEKS).tolist(),
         "spark_pct": pcts["p_all"],
     }
@@ -243,6 +251,7 @@ td{padding:5px 10px;text-align:center;border-bottom:1px solid var(--line);
  font-size:13px}
 td.name{font-weight:700}
 td.cohort,td.wow{color:var(--mut);font-size:11.5px}
+.gls{font-size:9.5px;color:#a9adb5;white-space:nowrap}
 td.net{font-size:12px;font-weight:600;color:#3a3d44}
 .oid{font-size:9px;font-weight:600;opacity:.8}
 tr.group td{color:var(--grp);font-size:10.5px;font-weight:700;
@@ -368,7 +377,11 @@ def render(rows: list[dict], thr: int, extremes_only: bool, out: str, nav: bool 
             f'<td class="name l">{html.escape(name)}</td>'
             f'<td class="cohort">{COHORT_LABEL[cohort]}</td>'
             f'<td class="net">{fmt_n(r["net"], signed=True)}</td>'
-            f'<td class="wow">{r["wow"]:+,.0f}</td>'
+            f'<td class="wow">{r["wow"]:+,.0f}'
+            + ("" if pd.isna(r["dL"]) else
+               f'<br><span class="gls">L{fmt_n(r["dL"], signed=True)} '
+               f'S{fmt_n(r["dS"], signed=True)}</span>')
+            + '</td>'
             f'<td class="wow">{fmt_n(r["oi"])}{oi_chg}</td>'
             + status_cell(r)
             + sparkline(r["spark"], r["spark_pct"], thr)
@@ -414,9 +427,11 @@ def render(rows: list[dict], thr: int, extremes_only: bool, out: str, nav: bool 
 </div>
 <div class="foot">Percentile of the mapped cohort's net positioning within each
 window · net/OI normalises for OI growth · nominal ranks raw net contracts
-(5y/1y only) · Net = current net contracts, Δ wk = week-on-week change · OI = total open
-interest with week-on-week Δ% · read net × OI together: net▲ OI▲ fresh buying,
-net▲ OI▼ short covering, net▼ OI▲ new shorts, net▼ OI▼ long liquidation · Status = consecutive
+(5y/1y only) · Net = current net contracts, Δ wk = week-on-week change, with the
+cohort's own gross moves beneath: L = change in its longs, S = change in its shorts
+(L▲ new longs, L▼ long liquidation, S▲ new shorts, S▼ short covering — exact for
+this cohort) · OI = total open interest, all cohorts combined, with week-on-week
+Δ% — context for how active the whole contract was, not attribution · Status = consecutive
 weeks at an extreme (NEW = entered this week) · sparkline = net/OI over the last
 year, dots mark weeks at an all-time extreme · ▲▼ = percentile change vs last
 week (shown when ≥5) · cohorts:
